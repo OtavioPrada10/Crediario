@@ -1,6 +1,8 @@
 import {
+  Body,
   Controller,
   Get,
+  Post,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -14,6 +16,14 @@ export class PurchasingManagerController {
   @Get()
   findAll() {
     return this.purchasingManagerService.findAll();
-  }
-
+  };
+  
+  @Post('/highest-monthly-debt')
+  calculatesLargestDebt(@Body() body: any) {
+    return this.purchasingManagerService.calculatesLargestDebt(body);
+  };
+  @Post('/calculate-debt')
+  calculateDebt(@Body() body: any) {
+    return this.purchasingManagerService.calculateDebt(body);
+  };
 }
