@@ -1,34 +1,52 @@
 <template>
   <div class="container">
-    <h2>Meus Contratos de Crediário</h2>
+    <h2>Contratos</h2>
+
+    <div class="filter-container">
+      <div class="filter-row">
+        <label>
+          Data Inicial:
+          <input class="dateField" type="date" v-model="filterStartDate" />
+        </label>
+        <label>
+          Data final:
+          <input class="dateField" type="date" v-model="filterEndDate" />
+        </label>
+      </div>
+      <button class="btn" @click="calculateHighestDebt">
+        Calcular maior divida
+      </button>
+      <div v-if="debtResult" style="margin-top: 1rem;">
+        <strong>Mês com maior dívida:</strong> {{ debtResult.month }} <br />
+        <strong>Valor total aberto:</strong> {{ formatarMoeda(debtResult.total_open) }}
+      </div>
+    </div>
+
     <table class="contratos-table text">
       <thead>
         <tr>
-          <th>&nbsp;</th> <th>Contrato</th>
-          <th>Data</th>
+          <th>&nbsp;</th>
+          <th>Contrato</th>
+          <th>Data do financiamento</th>
           <th>Valor Financiado</th>
-          <th>Status</th>
         </tr>
       </thead>
       <tbody>
-        <template v-for="contrato in contratos" :key="contrato.contrato">
+        <template v-for="contrato in filteredContracts" :key="contrato.contrato">
           <tr class="contrato-row">
             <td>
               <button @click="toggleDetalhes(contrato.contrato)" class="expand-button">
-                {{ contratoAberto === contrato.contrato ? '−' : '+' }}
+                <img v-if="contractOpen === contrato.contrato" src="../assets/icons-minus.svg" alt="Fechar" width="16"
+                  height="16" />
+                <img v-else src="../assets/icons-plus.svg" alt="Abrir" width="16" height="16" />
               </button>
             </td>
-            <td>{{ contrato.contrato }}</td>
-            <td>{{ formatarData(contrato.data) }}</td>
-            <td>{{ formatarMoeda(contrato.valorfinanciado) }}</td>
-            <td>
-              <span :class="['status', calcularStatus(contrato).class]">
-                {{ calcularStatus(contrato).texto }}
-              </span>
-            </td>
+            <td data-label="Contrato">{{ contrato.contrato }}</td>
+            <td data-label="Data do financiamento">{{ formatDate(contrato.data) }}</td>
+            <td data-label="Valor Financiado">{{ formatarMoeda(contrato.valorfinanciado) }}</td>
           </tr>
 
-          <tr v-if="contratoAberto === contrato.contrato" class="detalhes-row">
+          <tr v-if="contractOpen === contrato.contrato" class="detalhes-row">
             <td colspan="5">
               <div class="parcelas-container">
                 <h4>Detalhes das Parcelas</h4>
@@ -43,13 +61,13 @@
                   </thead>
                   <tbody>
                     <tr v-for="(parcela, idx) in contrato.parcelas" :key="idx">
-                      <td>{{ formatarData(parcela.datavencimento) }}</td>
-                      <td>{{ formatarMoeda(parcela.valorvencimento) }}</td>
-                      <td>{{ formatarData(parcela.dataultimopagamento) }}</td>
-                      <td>
-                         <span :class="['status', parcela.capitalaberto === 0 ? 'status-quitado' : 'status-aberto']">
-                           {{ parcela.capitalaberto === 0 ? 'Quitada' : 'Em Aberto' }}
-                         </span>
+                      <td data-label="Vencimento">{{ formatDate(parcela.datavencimento) }}</td>
+                      <td data-label="Valor">{{ formatarMoeda(parcela.valorvencimento) }}</td>
+                      <td data-label="Data Pagamento">{{ formatDate(parcela.dataultimopagamento) }}</td>
+                      <td data-label="Status">
+                        <span :class="['status', parcela.capitalaberto === 0 ? 'status-quitado' : 'status-aberto']">
+                          {{ parcela.capitalaberto === 0 ? 'Quitada' : 'Em Aberto' }}
+                        </span>
                       </td>
                     </tr>
                   </tbody>
@@ -64,8 +82,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
+
+
 
 //Definir interfaces para tipar os dados corretamente
 interface Parcela {
@@ -87,14 +107,63 @@ interface Contrato {
 
 //O ref agora é um array de Contrato e uma variável para controlar a expansão
 const contratos = ref<Contrato[]>([]);
-const contratoAberto = ref<string | null>(null);
+const contractOpen = ref<string | null>(null);
+const filterStartDate = ref<string | null>(null);
+const filterEndDate = ref<string | null>(null);
+const debtResult = ref<{ month: string; total_open: number } | null>(null);
 
-//Função para expandir/recolher os detalhes
+const filteredContracts = computed(() => {
+  // Se não tem nenhum filtro, retorna tudo
+  if (!filterStartDate.value && !filterEndDate.value) {
+    return contratos.value;
+  }
+
+  const start = filterStartDate.value ? new Date(filterStartDate.value) : null;
+  const end = filterEndDate.value ? new Date(filterEndDate.value) : null;
+
+  return contratos.value
+    .filter(contrato => {
+      const contratoDate = new Date(contrato.data);
+
+      // Só start
+      if (start && !end) {
+        return contratoDate >= start;
+      }
+      // Só end
+      if (!start && end) {
+        return contratoDate <= end;
+      }
+      // Ambos
+      if (start && end) {
+        return contratoDate >= start && contratoDate <= end;
+      }
+      // Nenhum filtro
+      return true;
+    });
+});
+
+const calculateHighestDebt = async () => {
+  if (filteredContracts.value.length === 0) {
+    alert('Nenhum contrato para analisar com o filtro atual.');
+    return;
+  }
+
+  try {
+    const response = await axios.post('http://localhost:3000/purchasing-manager/highest-monthly-debt', {
+      contratos: filteredContracts.value,
+    });
+    debtResult.value = response.data;
+  } catch (error) {
+    console.error('Erro ao calcular a dívida mais alta');
+  }
+};
+
+
 const toggleDetalhes = (contratoId: string) => {
-  if (contratoAberto.value === contratoId) {
-    contratoAberto.value = null; // Se já estiver aberto, fecha
+  if (contractOpen.value === contratoId) {
+    contractOpen.value = null; // Se já estiver aberto, fecha
   } else {
-    contratoAberto.value = contratoId;
+    contractOpen.value = contratoId;
   }
 };
 
@@ -103,110 +172,19 @@ const formatarMoeda = (valor: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
 };
 
-const formatarData = (dataStr: string) => {
+const formatDate = (dataStr: string) => {
   if (!dataStr) return 'N/A';
   const data = new Date(dataStr);
-  return new Intl.DateTimeFormat('pt-BR', {timeZone: 'UTC'}).format(data);
-};
-
-const calcularStatus = (contrato: Contrato) => {
-  const totalPago = contrato.parcelas.reduce((acc, p) => acc + p.totalpago, 0);
-  const temCapitalAberto = contrato.parcelas.some(p => p.capitalaberto > 0);
-
-  if (!temCapitalAberto && totalPago >= contrato.valorfinanciado) {
-    return { texto: 'Quitado', class: 'status-quitado' };
-  }
-  return { texto: 'Em Aberto', class: 'status-aberto' };
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(data);
 };
 
 onMounted(async () => {
   try {
     const response = await axios.get('http://localhost:3000/purchasing-manager');
-    contratos.value = response.data; 
+    contratos.value = response.data;
     console.log(contratos.value)
   } catch (error) {
-    console.error('Erro ao buscar contratos:', error);
+    console.error('Erro ao buscar contratos');
   }
 });
 </script>
-
-<style scoped>
-.container {
-  font-family: 'Open Sans';
-  padding: 1rem;
-}
-
-.contratos-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 1rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.contratos-table th, .contratos-table td {
-  padding: 12px 15px;
-  text-align: left;
-  border-bottom: 1px solid #ddd;
-}
-
-.contratos-table th {
-  background-color: #F1F6F5;
-  color: #004A3F;
-}
-
-.contrato-row:hover {
-  background-color: #f9f9f9;
-}
-
-.expand-button {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 1px solid #ccc;
-  background-color: #fff;
-  cursor: pointer;
-  font-weight: bold;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.detalhes-row > td {
-  padding: 0;
-  background-color: #fafafa;
-}
-
-.parcelas-container {
-  padding: 1rem 2rem;
-}
-
-.parcelas-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 0.5rem;
-}
-
-.parcelas-table th, .parcelas-table td {
-  padding: 8px 12px;
-  border: 1px solid #e0e0e0;
-}
-
-.parcelas-table th {
-  background-color: #e9e9e9;
-}
-
-.status {
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: bold;
-  color: #004A3F;
-}
-
-.status-quitado {
-  background-color: #D7F4F0; /* Verde */
-}
-
-.status-aberto {
-  background-color: #dc3545; /* Vermelho */
-}
-</style>
